@@ -43,5 +43,5 @@ export const readCSV = async (filePath: string): Promise<MintTransaction[]> => {
 };
 
 export function prettyPrintJSON(json: Object): void {
-  console.log(JSON.stringify(json), null, 2);
+  console.log(JSON.stringify(json, null, 2));
 }
