@@ -1,3 +1,5 @@
 node_modules/
 out/
 data.csv
+category_mapping.json
+account_mapping.json
