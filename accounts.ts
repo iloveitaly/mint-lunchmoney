@@ -1,107 +1,8 @@
 import _ from "underscore";
 import dateFns from "date-fns";
-import stringSimilarity from "string-similarity";
 import { LunchMoney } from "lunch-money";
-import { MintTransaction, prettyJSON } from "./util.js";
+import { MintTransaction, readJSONFile } from "./util.js";
 import fs from "fs";
-
-export async function transformAccountCategories(
-  transactions: MintTransaction[],
-  lunchMoneyClient: LunchMoney,
-  categoryMappingPath: string
-) {
-  const lunchMoneyRawCategories = await lunchMoneyClient.getCategories();
-  const lunchMoneyCategories = lunchMoneyRawCategories
-    .filter((c) => !c.is_group)
-    .map((c) => c.name);
-
-  const mintCategories = _.chain(transactions)
-    .map((row: any) => row.Category)
-    .compact()
-    .uniq()
-    .value();
-
-  const exactMatches = _.intersection(mintCategories, lunchMoneyCategories);
-
-  // TODO should output this metadata via a tuple or something so this could be an API
-  if (exactMatches.length > 0) {
-    console.log(
-      `Found ${exactMatches.length} exact matches:\n\n${exactMatches.join(
-        "\n"
-      )}\n`
-    );
-  } else {
-    console.log("No exact matches.\n");
-  }
-
-  // TODO this should be a CLI argument
-  let userCategoryMapping = null;
-  if (fs.existsSync(categoryMappingPath)) {
-    userCategoryMapping = JSON.parse(
-      fs.readFileSync(categoryMappingPath, "utf8")
-    ).categories;
-
-    console.log(`User provided category mapping discovered`);
-  }
-
-  const categoriesToMap: { [key: string]: any } = _.chain(mintCategories)
-    // exclude exact matches with lunch money categories
-    .difference(lunchMoneyCategories)
-    .compact()
-    // exclude categories that are already mapped
-    .difference(_.keys(userCategoryMapping))
-    // attempt to pick the best match in LM for Mint categories
-    // bestMatch: {
-    //   rating:0.5333333333333333,
-    //   target:'Business Expenses'
-    // }
-    .map((mintCategoryName: string) => {
-      return {
-        [mintCategoryName]: stringSimilarity.findBestMatch(
-          mintCategoryName,
-          lunchMoneyCategories
-        ).bestMatch.target,
-      };
-    })
-    // merge array of objects into one object
-    .reduce((acc: Object, curr: Object) => _.extend(acc, curr), {})
-    .value();
-
-  if (Object.keys(categoriesToMap).length > 0) {
-    if (userCategoryMapping) {
-      console.log(
-        `Additional categories must be mapped.\n${prettyJSON(categoriesToMap)}`
-      );
-    } else {
-      console.log(
-        `A category_mapping.json has been created to map ${
-          _.keys(categoriesToMap).length
-        } mint categories to lunch money:\n`
-      );
-
-      fs.writeFileSync(
-        categoryMappingPath,
-        prettyJSON({
-          categories: categoriesToMap,
-          lunchMoneyOptions: lunchMoneyCategories,
-        }),
-        "utf8"
-      );
-
-      process.exit(1);
-    }
-  }
-
-  // TODO we are mutating the array here, we should use a copy
-  for (const transaction of transactions) {
-    if (categoriesToMap[transaction.Category] !== undefined) {
-      transaction.Notes += `\n\nOriginal Mint category: ${transaction.Category}`;
-      transaction.Category = categoriesToMap[transaction.Category];
-    }
-  }
-
-  return transactions;
-}
 
 export function addExtIds(transactions: MintTransaction[]) {
   let mintIdIterator = 0;
@@ -122,32 +23,71 @@ export function addMintTag(transactions: MintTransaction[]) {
   return transactions;
 }
 
-export async function createImportAccounts(
+export function trimNotes(transactions: MintTransaction[]) {
+  for (const transaction of transactions) {
+    transaction.Notes = transaction.Notes.trim();
+  }
+
+  return transactions;
+}
+
+export async function addLunchMoneyAccountIds(
+  transactions: MintTransaction[],
+  lunchMoneyClient: LunchMoney
+) {
+  const manualLmAssets = await lunchMoneyClient.getAssets();
+  const manualLmAssetMapping = _.reduce(
+    manualLmAssets,
+    (acc: { [key: string]: number }, asset) => {
+      acc[(asset.display_name || asset.name).normalize("NFKC")] = asset.id;
+      return acc;
+    },
+    {}
+  );
+
+  for (const transaction of transactions) {
+    transaction.LunchMoneyAccountId =
+      manualLmAssetMapping[transaction.LunchMoneyAccountName.normalize("NFKC")];
+  }
+
+  return transactions;
+}
+
+export async function createLunchMoneyAccounts(
   transactions: MintTransaction[],
   lunchMoneyClient: LunchMoney
 ) {
   const mintAccountsAfterTransformation = _.chain(transactions)
-    .map((t) => t.AccountName)
+    .map((t) => t.LunchMoneyAccountName.normalize("NFKC"))
     .uniq()
     .value();
 
   // assets is only non-plaid assets
   const manualLmAssets = await lunchMoneyClient.getAssets();
-  const existingAccountNames = _.map(manualLmAssets, (r) => r.display_name);
-  debugger;
+  const existingAccountNames = manualLmAssets.map((r) =>
+    (r.display_name || r.name).normalize("NFKC")
+  );
 
-  console.log(`Creating ${existingAccountNames.length} accounts.`);
+  // there's a 'cash transaction' account in all LM accounts
+  existingAccountNames.push("Cash");
 
-  // return Promise.all(
-  //   _.map(accounts, (account: any) => {
-  //     return lunchMoneyClient.createAccount(account);
-  //   })
-  // );
+  const accountsToCreate = _.difference(
+    mintAccountsAfterTransformation,
+    existingAccountNames
+  );
+
+  // TODO right now LM does not allow you to create accounts programmatically
+  // https://feedback.lunchmoney.app/developer-api/p/create-asset-api
+  if (!_.isEmpty(accountsToCreate)) {
+    console.log(`Create these accounts:\n\n${accountsToCreate.join("\n")}`);
+    process.exit(1);
+  }
 }
 
 export function useArchiveForOldAccounts(
   transactions: MintTransaction[],
-  oldTransactionDate: Date
+  oldTransactionDate: Date,
+  transactionMappingPath: string
 ): MintTransaction[] {
   const [oldTransactions, recentTransactions] = _.partition(transactions, (t) =>
     dateFns.isBefore(
@@ -175,16 +115,34 @@ export function useArchiveForOldAccounts(
     )}\n`
   );
 
-  for (const transaction of transactions) {
-    transaction.Notes += `Original account: ${transaction.AccountName}`;
-    transaction.AccountName = "Mint Archive";
-  }
-
   console.log(
     `Found ${
       allActiveMintAccounts.length
     } active accounts:\n\n${allActiveMintAccounts.join("\n")}\n`
   );
+
+  const userSpecifiedArchiveAccounts =
+    readJSONFile(transactionMappingPath)?.archive || [];
+
+  const accountsToArchive = allInactiveMintAccounts.concat(
+    userSpecifiedArchiveAccounts
+  );
+
+  const accountsToSkip = ["Uncategorized", "Cash"];
+
+  for (const transaction of transactions) {
+    if (accountsToSkip.includes(transaction.AccountName)) {
+      transaction.LunchMoneyAccountName = transaction.AccountName;
+      continue;
+    }
+
+    if (accountsToArchive.includes(transaction.AccountName)) {
+      transaction.Notes += `\n\nOriginal Mint account: ${transaction.AccountName}`;
+      transaction.LunchMoneyAccountName = "Mint Archive";
+    } else {
+      transaction.LunchMoneyAccountName = `${transaction.AccountName} (Mint)`;
+    }
+  }
 
   return transactions;
 }

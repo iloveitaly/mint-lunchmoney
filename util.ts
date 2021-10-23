@@ -33,6 +33,14 @@ export interface MintTransaction {
   LunchMoneyExtId: string;
 }
 
+export const readJSONFile = (path: string): any | null => {
+  if (fs.existsSync(path)) {
+    return JSON.parse(fs.readFileSync(path, "utf8"));
+  }
+
+  return null;
+};
+
 // TODO should type the resulting object here for better checking downstream
 export const readCSV = async (filePath: string): Promise<MintTransaction[]> => {
   const csvFile = fs.readFileSync(filePath);
@@ -41,6 +49,7 @@ export const readCSV = async (filePath: string): Promise<MintTransaction[]> => {
   return new Promise((resolve) => {
     papaparse.parse(csvData, {
       header: true,
+      skipEmptyLines: true,
       // 'Original Description' => 'OriginalDescription'
       transformHeader: (header: string) => header.replace(/\s/g, ""),
       complete: (results) => {
@@ -48,6 +57,11 @@ export const readCSV = async (filePath: string): Promise<MintTransaction[]> => {
       },
     } as papaparse.ParseConfig<MintTransaction>);
   });
+};
+
+export const writeCSV = (csvRows: any, filePath: string) => {
+  const csvContent = papaparse.unparse(csvRows);
+  fs.writeFileSync(filePath, csvContent);
 };
 
 export function prettyJSON(json: Object, returnString = false): string {

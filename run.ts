@@ -1,13 +1,19 @@
 // github:lunch-money/lunch-money-js
 
 import { LunchMoney } from "lunch-money";
-import { readCSV } from "./util.js";
+import { readCSV, writeCSV } from "./util.js";
+import {
+  transformAccountCategories,
+  addLunchMoneyCategoryIds,
+  createLunchMoneyCategories,
+} from "./categories.js";
 import {
   useArchiveForOldAccounts,
-  transformAccountCategories,
-  createImportAccounts,
   addExtIds,
   addMintTag,
+  trimNotes,
+  createLunchMoneyAccounts,
+  addLunchMoneyAccountIds,
 } from "./accounts.js";
 import dotenv from "dotenv";
 import humanInterval from "human-interval";
@@ -56,11 +62,23 @@ const mintTransactionsWithTransformedCategories =
     "./category_mapping.json"
   );
 
-const mintTransactionsWithExtId = addExtIds(
-  addMintTag(mintTransactionsWithTransformedCategories)
+await createLunchMoneyCategories(
+  mintTransactionsWithTransformedCategories,
+  lunchMoney
 );
 
-debugger;
-// write out the transactions to a file with papaparse for inspection and backup
+await createLunchMoneyAccounts(
+  mintTransactionsWithTransformedCategories,
+  lunchMoney
+);
 
-createImportAccounts(mintTransactionsWithTransformedCategories, lunchMoney);
+const mintTransactionsWithExtId = addExtIds(
+  trimNotes(addMintTag(mintTransactionsWithTransformedCategories))
+);
+
+const mintTransactionsWithLunchMoneyIds = await addLunchMoneyCategoryIds(
+  await addLunchMoneyAccountIds(mintTransactionsWithExtId, lunchMoney),
+  lunchMoney
+);
+
+writeCSV(mintTransactionsWithLunchMoneyIds, "./data_transformed.csv");
