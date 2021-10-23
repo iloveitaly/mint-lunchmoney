@@ -1,13 +1,20 @@
 import _ from "underscore";
 import dateFns from "date-fns";
 import stringSimilarity from "string-similarity";
-import { MintTransaction, prettyPrintJSON } from "./util.js";
+import { LunchMoney } from "lunch-money";
+import { MintTransaction, prettyJSON } from "./util.js";
 import fs from "fs";
 
-export function transformAccountCategories(
+export async function transformAccountCategories(
   transactions: MintTransaction[],
-  lunchMoneyCategories: string[]
+  lunchMoneyClient: LunchMoney,
+  categoryMappingPath: string
 ) {
+  const lunchMoneyRawCategories = await lunchMoneyClient.getCategories();
+  const lunchMoneyCategories = lunchMoneyRawCategories
+    .filter((c) => !c.is_group)
+    .map((c) => c.name);
+
   const mintCategories = _.chain(transactions)
     .map((row: any) => row.Category)
     .compact()
@@ -28,28 +35,26 @@ export function transformAccountCategories(
   }
 
   // TODO this should be a CLI argument
-  const mappingPath = "./category_mapping.json";
   let userCategoryMapping = null;
-  if (fs.existsSync(mappingPath)) {
+  if (fs.existsSync(categoryMappingPath)) {
     userCategoryMapping = JSON.parse(
-      fs.readFileSync(mappingPath, "utf8")
+      fs.readFileSync(categoryMappingPath, "utf8")
     ).categories;
 
     console.log(`User provided category mapping discovered`);
-
-    // TODO we are mutating the array here, we should use a copy
-    for (const transaction of transactions) {
-      transaction.Category = userCategoryMapping[transaction.Category];
-    }
   }
 
-  const categoriesToMap = _.chain(mintCategories)
+  const categoriesToMap: { [key: string]: any } = _.chain(mintCategories)
+    // exclude exact matches with lunch money categories
     .difference(lunchMoneyCategories)
     .compact()
+    // exclude categories that are already mapped
+    .difference(_.keys(userCategoryMapping))
     // attempt to pick the best match in LM for Mint categories
-    // bestMatch: {}
-    // rating:0.5333333333333333
-    // target:'Business Expenses'
+    // bestMatch: {
+    //   rating:0.5333333333333333,
+    //   target:'Business Expenses'
+    // }
     .map((mintCategoryName: string) => {
       return {
         [mintCategoryName]: stringSimilarity.findBestMatch(
@@ -62,26 +67,82 @@ export function transformAccountCategories(
     .reduce((acc: Object, curr: Object) => _.extend(acc, curr), {})
     .value();
 
-  if (categoriesToMap) {
+  if (Object.keys(categoriesToMap).length > 0) {
     if (userCategoryMapping) {
-      console.log(`Additional categories must be mapped.\n${categoriesToMap}`);
+      console.log(
+        `Additional categories must be mapped.\n${prettyJSON(categoriesToMap)}`
+      );
     } else {
       console.log(
-        `Create a category_mapping.json to map ${
+        `A category_mapping.json has been created to map ${
           _.keys(categoriesToMap).length
         } mint categories to lunch money:\n`
       );
 
-      prettyPrintJSON({
-        categories: categoriesToMap,
-        lunchMoneyOptions: lunchMoneyCategories,
-      });
-    }
+      fs.writeFileSync(
+        categoryMappingPath,
+        prettyJSON({
+          categories: categoriesToMap,
+          lunchMoneyOptions: lunchMoneyCategories,
+        }),
+        "utf8"
+      );
 
-    process.exit(1);
+      process.exit(1);
+    }
+  }
+
+  // TODO we are mutating the array here, we should use a copy
+  for (const transaction of transactions) {
+    if (categoriesToMap[transaction.Category] !== undefined) {
+      transaction.Notes += `\n\nOriginal Mint category: ${transaction.Category}`;
+      transaction.Category = categoriesToMap[transaction.Category];
+    }
   }
 
   return transactions;
+}
+
+export function addExtIds(transactions: MintTransaction[]) {
+  let mintIdIterator = 0;
+
+  for (const transaction of transactions) {
+    transaction.LunchMoneyExtId = `MINT-${mintIdIterator}`;
+    mintIdIterator++;
+  }
+
+  return transactions;
+}
+
+export function addMintTag(transactions: MintTransaction[]) {
+  for (const transaction of transactions) {
+    transaction.LunchMoneyTags = ["mint"];
+  }
+
+  return transactions;
+}
+
+export async function createImportAccounts(
+  transactions: MintTransaction[],
+  lunchMoneyClient: LunchMoney
+) {
+  const mintAccountsAfterTransformation = _.chain(transactions)
+    .map((t) => t.AccountName)
+    .uniq()
+    .value();
+
+  // assets is only non-plaid assets
+  const manualLmAssets = await lunchMoneyClient.getAssets();
+  const existingAccountNames = _.map(manualLmAssets, (r) => r.display_name);
+  debugger;
+
+  console.log(`Creating ${existingAccountNames.length} accounts.`);
+
+  // return Promise.all(
+  //   _.map(accounts, (account: any) => {
+  //     return lunchMoneyClient.createAccount(account);
+  //   })
+  // );
 }
 
 export function useArchiveForOldAccounts(
@@ -118,6 +179,12 @@ export function useArchiveForOldAccounts(
     transaction.Notes += `Original account: ${transaction.AccountName}`;
     transaction.AccountName = "Mint Archive";
   }
+
+  console.log(
+    `Found ${
+      allActiveMintAccounts.length
+    } active accounts:\n\n${allActiveMintAccounts.join("\n")}\n`
+  );
 
   return transactions;
 }

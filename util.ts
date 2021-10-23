@@ -23,6 +23,14 @@ export interface MintTransaction {
   Notes: string;
   OriginalDescription: string;
   TransactionType: string;
+
+  // additional fields for LM import
+  LunchMoneyTags: string[];
+  LunchMoneyAccountId: number;
+  LunchMoneyAccountName: string;
+  LunchMoneyCategoryId: number;
+  LunchMoneyCategoryName: string;
+  LunchMoneyExtId: string;
 }
 
 // TODO should type the resulting object here for better checking downstream
@@ -42,6 +50,6 @@ export const readCSV = async (filePath: string): Promise<MintTransaction[]> => {
   });
 };
 
-export function prettyPrintJSON(json: Object): void {
-  console.log(JSON.stringify(json, null, 2));
+export function prettyJSON(json: Object, returnString = false): string {
+  return JSON.stringify(json, null, 2);
 }

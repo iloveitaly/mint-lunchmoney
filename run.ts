@@ -1,14 +1,15 @@
 // github:lunch-money/lunch-money-js
 
 import { LunchMoney } from "lunch-money";
-import stringSimilarity from "string-similarity";
-import { MintTransaction, prettyPrintJSON, readCSV } from "./util.js";
+import { readCSV } from "./util.js";
 import {
   useArchiveForOldAccounts,
   transformAccountCategories,
+  createImportAccounts,
+  addExtIds,
+  addMintTag,
 } from "./accounts.js";
 import dotenv from "dotenv";
-import _ from "underscore";
 import humanInterval from "human-interval";
 import dateFns from "date-fns";
 
@@ -42,45 +43,24 @@ const startImportDate = determineStartImportDate();
 
 const mintTransactionsWithArchiveAccount = useArchiveForOldAccounts(
   mintTransactions,
-  startImportDate
+  startImportDate,
+  "./account_mapping.json"
 );
 
 const lunchMoney = new LunchMoney({ token: process.env.LUNCH_MONEY_API_KEY });
 
-const lmRawCategories = await lunchMoney.getCategories();
-const lmCategories = lmRawCategories.map((c) => c.name);
+const mintTransactionsWithTransformedCategories =
+  await transformAccountCategories(
+    mintTransactionsWithArchiveAccount,
+    lunchMoney,
+    "./category_mapping.json"
+  );
 
-const mintTransactionsWithTransformedCategories = transformAccountCategories(
-  mintTransactionsWithArchiveAccount,
-  lmCategories
+const mintTransactionsWithExtId = addExtIds(
+  addMintTag(mintTransactionsWithTransformedCategories)
 );
 
-// assets is only non-plaid assets
-const manualAssets = await lunchMoney.getAssets();
-const automaticAssets = await lunchMoney.getPlaidAccounts();
-
-const allAssetNames = _.union(
-  _.map(manualAssets, (r) => r.display_name || r.name),
-  _.map(automaticAssets, (r) => r.name)
-);
-
-const mintToLunchMoneyCategoryMapping = {};
-
 debugger;
-// const mintCategories = csv.data
-//   .map(row => {
+// write out the transactions to a file with papaparse for inspection and backup
 
-// {
-//   header: true,
-//   skipEmptyLines: true,
-//   encoding: 'utf8'
-// }
-
-debugger;
-console.log("sdfsfd");
-
-// extract all accounts and categories from the CSV
-
-// get lunch money accounts and categories
-
-// should append account name where it isn't mapped
+createImportAccounts(mintTransactionsWithTransformedCategories, lunchMoney);
