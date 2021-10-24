@@ -2,34 +2,6 @@ import _ from "underscore";
 import dateFns from "date-fns";
 import { LunchMoney } from "lunch-money";
 import { MintTransaction, readJSONFile } from "./util.js";
-import fs from "fs";
-
-export function addExtIds(transactions: MintTransaction[]) {
-  let mintIdIterator = 0;
-
-  for (const transaction of transactions) {
-    transaction.LunchMoneyExtId = `MINT-${mintIdIterator}`;
-    mintIdIterator++;
-  }
-
-  return transactions;
-}
-
-export function addMintTag(transactions: MintTransaction[]) {
-  for (const transaction of transactions) {
-    transaction.LunchMoneyTags = ["mint"];
-  }
-
-  return transactions;
-}
-
-export function trimNotes(transactions: MintTransaction[]) {
-  for (const transaction of transactions) {
-    transaction.Notes = transaction.Notes.trim();
-  }
-
-  return transactions;
-}
 
 export async function addLunchMoneyAccountIds(
   transactions: MintTransaction[],
@@ -39,6 +11,7 @@ export async function addLunchMoneyAccountIds(
   const manualLmAssetMapping = _.reduce(
     manualLmAssets,
     (acc: { [key: string]: number }, asset) => {
+      // without normalize, accounts with utf8 characters will not be properly matched
       acc[(asset.display_name || asset.name).normalize("NFKC")] = asset.id;
       return acc;
     },
@@ -86,6 +59,7 @@ export async function createLunchMoneyAccounts(
 
 export function useArchiveForOldAccounts(
   transactions: MintTransaction[],
+  // the date at which you want to treat transactions as old
   oldTransactionDate: Date,
   transactionMappingPath: string
 ): MintTransaction[] {
@@ -128,6 +102,7 @@ export function useArchiveForOldAccounts(
     userSpecifiedArchiveAccounts
   );
 
+  // TODO these are properly skipped but we don't map these to the right thing in LM
   const accountsToSkip = ["Uncategorized", "Cash"];
 
   for (const transaction of transactions) {

@@ -31,6 +31,8 @@ export interface MintTransaction {
   LunchMoneyCategoryId: number;
   LunchMoneyCategoryName: string;
   LunchMoneyExtId: string;
+  LunchMoneyAmount: string;
+  LunchMoneyDate: string;
 }
 
 export const readJSONFile = (path: string): any | null => {
