@@ -6,7 +6,7 @@
     "date-fns": "^2.25.0",
     "dotenv": "^10.0.0",
     "human-interval": "^2.0.1",
-    "lunch-money": "file:~/Projects/javascript/lunch-money-js",
+    "lunch-money": "git+ssh://git@github.com:lunch-money/lunch-money-js.git#5d08361e44497464b4f5217814a8a16215e94932",
     "papaparse": "^5.3.1",
     "string-similarity": "^4.0.4",
     "ts-node": "^10.2.1",
