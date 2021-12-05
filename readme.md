@@ -34,7 +34,8 @@ Use this file to map Mint categories to LunchMoney categories. This file will be
 ```json
 {
   "categories": {
-    "MintCategory": "LunchMoneyCategory"
+    "MintCategory": "LunchMoneyCategory",
+    "MintCategory2": {"category": "LM Category 2", "tags": ["foo"]}
   }
 }
 ```

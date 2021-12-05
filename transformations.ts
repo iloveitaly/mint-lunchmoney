@@ -14,7 +14,10 @@ function addExtIds(transactions: MintTransaction[]) {
 
 function addMintTag(transactions: MintTransaction[]) {
   for (const transaction of transactions) {
-    transaction.LunchMoneyTags = ["mint"];
+    transaction.LunchMoneyTags = [
+      ...(transaction.LunchMoneyTags || []),
+      "mint",
+    ];
   }
 
   return transactions;

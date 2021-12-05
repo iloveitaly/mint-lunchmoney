@@ -1,8 +1,14 @@
-import { readJSONFile, prettyJSON, MintTransaction } from "./util.js";
+import { MintTransaction, prettyJSON, readJSONFile } from "./util.js";
 import stringSimilarity from "string-similarity";
 import { LunchMoney } from "lunch-money";
 import _ from "underscore";
 import fs from "fs";
+
+type LunchMoneyOutput = { category: string; tags?: string[] } | string;
+
+interface CategoryMapping {
+  [mintCategoryName: string]: LunchMoneyOutput;
+}
 
 export async function transformAccountCategories(
   transactions: MintTransaction[],
@@ -33,7 +39,7 @@ export async function transformAccountCategories(
     console.log("No exact matches.\n");
   }
 
-  const userCategoryMapping =
+  const userCategoryMapping: CategoryMapping =
     readJSONFile(categoryMappingPath)?.categories || {};
 
   if (!_.isEmpty(userCategoryMapping)) {
@@ -92,8 +98,13 @@ export async function transformAccountCategories(
   for (const transaction of transactions) {
     if (transaction.Category in userCategoryMapping) {
       transaction.Notes += `\n\nOriginal Mint category: ${transaction.Category}`;
-      transaction.LunchMoneyCategoryName =
-        userCategoryMapping[transaction.Category];
+      const outputMapping = userCategoryMapping[transaction.Category];
+      if (typeof outputMapping === "string") {
+        transaction.LunchMoneyCategoryName = outputMapping;
+      } else {
+        transaction.LunchMoneyCategoryName = outputMapping.category;
+        transaction.LunchMoneyTags = outputMapping.tags || [];
+      }
     } else {
       transaction.LunchMoneyCategoryName = transaction.Category;
     }
