@@ -64,7 +64,7 @@ export async function transformAccountCategories(
     .value();
 
   if (!_.isEmpty(categoriesToMap)) {
-    if (userCategoryMapping) {
+    if (!_.isEmpty(userCategoryMapping)) {
       console.log(
         `Additional categories must be mapped.\n${prettyJSON(categoriesToMap)}`
       );
