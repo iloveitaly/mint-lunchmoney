@@ -22,10 +22,9 @@ The primary reason I went through all of this trouble is to learn TypeScript. I 
 1. Download all of your mint transactions in a single CSV. Put it in this directory as `data.csv`
 2. Get a lunch money API key. Run `cp .env-example .env` and add your API key to `.env`
 3. `asdf install` and `npm install` to setup node & npm packages
-4. `tsc .` to compile the typescript
-5. `node out/run.js` to run the script
+4. `npm run build`, `npm start` to build and run!
 
-You'll probably need to modify the two files below *after* running `run.js`.
+You'll probably need to modify the two files below *after* running.
 
 #### category_mapping.json
 

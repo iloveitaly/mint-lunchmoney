@@ -17,136 +17,138 @@ import dotenv from "dotenv";
 import humanInterval from "human-interval";
 import dateFns from "date-fns";
 
-dotenv.config();
+(async () => {
+  dotenv.config();
 
-if (!process.env.LUNCH_MONEY_API_KEY) {
-  console.error("Lunch Money API key not set");
-  process.exit(1);
-}
-
-const mintTransactions = await readCSV("./data.csv");
-
-// TODO this should be an input parameter to the script
-// TODO this isn't really the import date, this is only used to determine when transactions should be treated as old
-function determineStartImportDate() {
-  let range = humanInterval("1 year");
-
-  if (!range) {
-    console.log("Invalid date to search for active accounts");
+  if (!process.env.LUNCH_MONEY_API_KEY) {
+    console.error("Lunch Money API key not set");
     process.exit(1);
   }
 
-  // range is in milliseconds
-  range /= 1000;
+  const mintTransactions = await readCSV("./data.csv");
 
-  const oneYearAgo = dateFns.subSeconds(new Date(), range);
+  // TODO this should be an input parameter to the script
+  // TODO this isn't really the import date, this is only used to determine when transactions should be treated as old
+  function determineStartImportDate() {
+    let range = humanInterval("1 year");
 
-  return oneYearAgo;
-}
+    if (!range) {
+      console.log("Invalid date to search for active accounts");
+      process.exit(1);
+    }
 
-const startImportDate = determineStartImportDate();
+    // range is in milliseconds
+    range /= 1000;
 
-const mintTransactionsWithArchiveAccount = useArchiveForOldAccounts(
-  mintTransactions,
-  startImportDate,
-  "./account_mapping.json"
-);
+    const oneYearAgo = dateFns.subSeconds(new Date(), range);
 
-const lunchMoney = new LunchMoney({ token: process.env.LUNCH_MONEY_API_KEY });
+    return oneYearAgo;
+  }
 
-const mintTransactionsWithTransformedCategories =
-  await transformAccountCategories(
-    mintTransactionsWithArchiveAccount,
-    lunchMoney,
-    "./category_mapping.json"
+  const startImportDate = determineStartImportDate();
+
+  const mintTransactionsWithArchiveAccount = useArchiveForOldAccounts(
+    mintTransactions,
+    startImportDate,
+    "./account_mapping.json"
   );
 
-await createLunchMoneyCategories(
-  mintTransactionsWithTransformedCategories,
-  lunchMoney
-);
+  const lunchMoney = new LunchMoney({ token: process.env.LUNCH_MONEY_API_KEY });
 
-await createLunchMoneyAccounts(
-  mintTransactionsWithTransformedCategories,
-  lunchMoney
-);
+  const mintTransactionsWithTransformedCategories =
+    await transformAccountCategories(
+      mintTransactionsWithArchiveAccount,
+      lunchMoney,
+      "./category_mapping.json"
+    );
 
-const mintTransactionsTransformed = applyStandardTransformations(
-  mintTransactionsWithTransformedCategories
-);
-
-const mintTransactionsWithLunchMoneyIds = await addLunchMoneyCategoryIds(
-  await addLunchMoneyAccountIds(mintTransactionsTransformed, lunchMoney),
-  lunchMoney
-);
-
-writeCSV(mintTransactionsWithLunchMoneyIds, "./data_transformed.csv");
-
-// TODO should confirm the user actually wants to send everything to LM
-// TODO we should extract this out into a separate function
-// TODO unsure if we can increase the batch size
-// TODO some unknowns about the API that we are guessing on right now:
-//    - https://github.com/lunch-money/developers/issues/11
-//    - https://github.com/lunch-money/developers/issues/10
-
-const BATCH_SIZE = 100;
-
-console.log(
-  `Pushing ${mintTransactionsWithLunchMoneyIds.length} transactions to LunchMoney`
-);
-console.log(
-  `This will be done in ${Math.ceil(
-    mintTransactionsWithLunchMoneyIds.length / BATCH_SIZE
-  )}`
-);
-
-// page through transactions
-for (
-  let i = 0;
-  i * BATCH_SIZE < mintTransactionsWithLunchMoneyIds.length;
-  i += 1
-) {
-  const batch = mintTransactionsWithLunchMoneyIds.slice(
-    i * BATCH_SIZE,
-    (i + 1) * BATCH_SIZE
+  await createLunchMoneyCategories(
+    mintTransactionsWithTransformedCategories,
+    lunchMoney
   );
+
+  await createLunchMoneyAccounts(
+    mintTransactionsWithTransformedCategories,
+    lunchMoney
+  );
+
+  const mintTransactionsTransformed = applyStandardTransformations(
+    mintTransactionsWithTransformedCategories
+  );
+
+  const mintTransactionsWithLunchMoneyIds = await addLunchMoneyCategoryIds(
+    await addLunchMoneyAccountIds(mintTransactionsTransformed, lunchMoney),
+    lunchMoney
+  );
+
+  writeCSV(mintTransactionsWithLunchMoneyIds, "./data_transformed.csv");
+
+  // TODO should confirm the user actually wants to send everything to LM
+  // TODO we should extract this out into a separate function
+  // TODO unsure if we can increase the batch size
+  // TODO some unknowns about the API that we are guessing on right now:
+  //    - https://github.com/lunch-money/developers/issues/11
+  //    - https://github.com/lunch-money/developers/issues/10
+
+  const BATCH_SIZE = 100;
 
   console.log(
-    `Pushing batch ${i} transactions (${batch.length}) to LunchMoney`
+    `Pushing ${mintTransactionsWithLunchMoneyIds.length} transactions to LunchMoney`
+  );
+  console.log(
+    `This will be done in ${Math.ceil(
+      mintTransactionsWithLunchMoneyIds.length / BATCH_SIZE
+    )}`
   );
 
-  const formattedTransactions = batch.map(
-    (transaction) =>
-      ({
-        payee: transaction.Description,
-        notes: transaction.Notes,
+  // page through transactions
+  for (
+    let i = 0;
+    i * BATCH_SIZE < mintTransactionsWithLunchMoneyIds.length;
+    i += 1
+  ) {
+    const batch = mintTransactionsWithLunchMoneyIds.slice(
+      i * BATCH_SIZE,
+      (i + 1) * BATCH_SIZE
+    );
 
-        date: transaction.LunchMoneyDate,
-        category_id: transaction.LunchMoneyCategoryId,
-        amount: transaction.LunchMoneyAmount,
-        asset_id: transaction.LunchMoneyAccountId,
-        external_id: transaction.LunchMoneyExtId,
-        tags: transaction.LunchMoneyTags,
+    console.log(
+      `Pushing batch ${i} transactions (${batch.length}) to LunchMoney`
+    );
 
-        currency: "usd",
-        status: "cleared",
-      } as DraftTransaction)
-  );
+    const formattedTransactions = batch.map(
+      (transaction) =>
+        ({
+          payee: transaction.Description,
+          notes: transaction.Notes,
 
-  const result = await lunchMoney.createTransactions(
-    formattedTransactions,
+          date: transaction.LunchMoneyDate,
+          category_id: transaction.LunchMoneyCategoryId,
+          amount: transaction.LunchMoneyAmount,
+          asset_id: transaction.LunchMoneyAccountId,
+          external_id: transaction.LunchMoneyExtId,
+          tags: transaction.LunchMoneyTags,
 
-    // don't apply rules, user can apply manually
-    false,
+          currency: "usd",
+          status: "cleared",
+        } as DraftTransaction)
+    );
 
-    // check for recurring expenses
-    true,
+    const result = await lunchMoney.createTransactions(
+      formattedTransactions,
 
-    // treat negative amounts as debit
-    true
-  );
+      // don't apply rules, user can apply manually
+      false,
 
-  if (result.error) {
-    debugger;
+      // check for recurring expenses
+      true,
+
+      // treat negative amounts as debit
+      true
+    );
+
+    if (result.error) {
+      debugger;
+    }
   }
-}
+})().catch((e) => console.error(e));
